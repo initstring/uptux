@@ -181,6 +181,10 @@ def regex_vuln_search(**kwargs):
     # Open up each individual file and read the text into memory.
     for file_name in kwargs['file_paths']:
         return_dict = {}
+        if not os.path.exists(file_name):
+            # We are not worried about identifying broken symlinks in this
+            # function, so we will simply pass over these.
+            continue
         try:
             file_object = open(file_name, 'r')
             file_text = file_object.read()
@@ -197,10 +201,7 @@ def regex_vuln_search(**kwargs):
         except PermissionError:
             tee("Could not open {} for analysis, permission denied."
                 .format(file_name), box='warn')
-        except FileNotFoundError:
-            tee("File not found. Broken link?\n"
-                "  {} -->  {}".format(file_name, os.path.realpath(file_name)),
-                box='warn')
+
 
     if return_list:
         # Print to console and log the interesting file names and content.
@@ -233,14 +234,14 @@ def check_permissions(**kwargs):
             # Is it a symlink? If so, get the real path and check permissions.
             # If it is broken, check permissions on the parent directory.
             if os.path.islink(file_name):
-                target = os.path.realpath(file_name)
+                target = os.readlink(file_name)
                 if os.path.exists(target):
                     if os.access(target, os.W_OK):
                         writeable_files.add(target)
                 else:
                     parent_dir = os.path.dirname(target)
                     if os.access(parent_dir, os.W_OK):
-                        writeable_dirs.add((file_name, parent_dir))
+                        writeable_dirs.add((file_name, target))
 
             # OK, not a symlink. Just check permissions.
             else:
