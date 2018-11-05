@@ -26,7 +26,7 @@ optional arguments:
 
 # Testing
 For testing purposes, you can run the `tests/r00tme.sh` script, which will
-create many vulnerable configuratoin issues on your system that uptux can
+create many vulnerable configuration issues on your system that uptux can
 identify. Running `tests/unr00tme.sh` will undo these changes, but don't hold
 me to it. Needless to say, this is dangerous.
 
