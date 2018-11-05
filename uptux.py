@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 """
 uptux by initstring (gitlab.com/initstring)
 
 This tool checks for configuration issues on Linux systems that may lead to
-privilege escalation. The core focus in on systemd, which seems to be left
-alone by other similar tools.
+privilege escalation.
 
 All functionality is contained in a single file, because installing packages
 in restricted shells is a pain.
@@ -20,6 +19,7 @@ import subprocess
 import inspect
 import glob
 import re
+
 
 BANNER = r'''
 
@@ -40,22 +40,30 @@ BANNER = r'''
 
 '''
 
-# This tool doesn't process a lot of arguments. Keeping argparse and logfile
-# as globals for simplicity with the 'tee' function.
+
+########################## Global Declarations Follow #########################
+
 LOGFILE = 'log-uptux-{:%Y-%m-%d-%H.%M.%S}'.format(datetime.datetime.now())
 PARSER = argparse.ArgumentParser(description=
                                  "PrivEsc for modern Linux systems,"
                                  " by initstring (gitlab.com/initstring)")
 PARSER.add_argument('-n', '--nologging', action='store_true',
-                    help='Disable logging functionality')
+                    help='do not write output to a logfile')
+PARSER.add_argument('-d', '--debug', action='store_true',
+                    help='print some debugging info to the console')
 ARGS = PARSER.parse_args()
 
+## One more global - known directories for storing systemd files.
+SYSTEMD_DIRS = ['/etc/systemd/**/',
+                '/lib/systemd/**/',
+                '/run/systemd/**/',
+                '/usr/lib/systemd/**/']
+########################## End of Global Declarations #########################
 
-# Will not be supporting legacy Python 2.
-if sys.version_info < (3, 0):
-    print("\nSorry mate, you'll need to use Python 3+ on this one...\n")
-    sys.exit(1)
 
+############################ Setup Functions Follow ###########################
+
+# This is the place for functions that help set up the application.
 
 def tee(text, **kwargs):
     """Used to log and print concurrently"""
@@ -142,6 +150,8 @@ def build_checks_list():
     # Return the sorted list of functions.
     return uptux_checks
 
+############################# End Setup Functions #############################
+
 
 ########################### Helper Functions Follow ###########################
 
@@ -166,6 +176,33 @@ def shell_exec(command):
     out_text = out_text.rstrip()
     return out_text
 
+
+def find_system_files(**kwargs):
+    """Locates system files
+
+    Expected kwargs: known_dirs, search_mask
+    """
+
+    # Define known Linux folders for storing service unit definitions
+    return_list = set()
+
+    # Recursively gather all service unit from the known directories
+    # and add them to a deduplicated set.
+    for directory in kwargs['known_dirs']:
+        found_files = glob.glob(directory + kwargs['search_mask'])
+        for item in found_files:
+            # We don't care about files that point to /dev/null.
+            if '/dev/null' not in os.path.realpath(item):
+                return_list.add(item)
+
+    if ARGS.debug:
+        print("DEBUG, FOUND FILES")
+        for item in return_list:
+            print(item)
+
+    return return_list
+
+
 def regex_vuln_search(**kwargs):
     """Helper function for searching text files
 
@@ -181,29 +218,26 @@ def regex_vuln_search(**kwargs):
     # Open up each individual file and read the text into memory.
     for file_name in kwargs['file_paths']:
         return_dict = {}
+
+        # Continue if we can't access the file.
         if not os.path.exists(file_name):
-            # We are not worried about identifying broken symlinks in this
-            # function, so we will simply pass over these.
             continue
-        try:
-            file_object = open(file_name, 'r')
-            file_text = file_object.read()
-            # Use the regex we pass in to the function to look for vulns.
-            found = re.findall(kwargs['regex'], file_text)
 
-            # Save the file name and the interesting lines of text
-            if found:
-                return_dict['file_name'] = file_name
-                return_dict['text'] = found
-                return_list.append(return_dict)
+        file_object = open(file_name, 'r')
+        file_text = file_object.read()
+        # Use the regex we pass in to the function to look for vulns.
+        found = re.findall(kwargs['regex'], file_text)
 
-        # Handle any issues with individual files.
-        except PermissionError:
-            tee("Could not open {} for analysis, permission denied."
-                .format(file_name), box='warn')
+        # Save the file name and the interesting lines of text
+        if found:
+            return_dict['file_name'] = file_name
+            return_dict['text'] = found
+            return_list.append(return_dict)
 
-
-    if return_list:
+    # If the function is supplied with message info, print to console and log.
+    # This function may be used instead as input to another function, so we
+    # don't always want to print here.
+    if return_list and kwargs['message_text'] and kwargs['message_box']:
         # Print to console and log the interesting file names and content.
         tee("")
         tee(kwargs['message_text'], box=kwargs['message_box'])
@@ -213,8 +247,17 @@ def regex_vuln_search(**kwargs):
                 tee("    {}".format(text))
             tee("")
 
+    if ARGS.debug:
+        print("DEBUG, SEARCH RESULTS")
+        for item in return_list:
+            print(item['file_name'])
+            for text in item['text']:
+                print("  {}".format(text))
 
-def check_permissions(**kwargs):
+    return return_list
+
+
+def check_file_permissions(**kwargs):
     """Helper function to check permissions and symlink status
 
     This function will take a list of file paths, resolve them to their
@@ -230,32 +273,30 @@ def check_permissions(**kwargs):
     writeable_dirs = set()
 
     for file_name in kwargs['file_paths']:
-        try:
-            # Is it a symlink? If so, get the real path and check permissions.
-            # If it is broken, check permissions on the parent directory.
-            if os.path.islink(file_name):
-                target = os.readlink(file_name)
-                if os.path.exists(target):
-                    if os.access(target, os.W_OK):
-                        writeable_files.add(target)
-                else:
-                    parent_dir = os.path.dirname(target)
-                    if os.access(parent_dir, os.W_OK):
-                        writeable_dirs.add((file_name, target))
 
-            # OK, not a symlink. Just check permissions.
+        # Is it a symlink? If so, get the real path and check permissions.
+        # If it is broken, check permissions on the parent directory.
+        if os.path.islink(file_name):
+            target = os.readlink(file_name)
+
+            # Some symlinks use relative path names. Find these and prepend
+            # the directory name so we can investigate properly.
+            if target[0] == '.':
+                parent_dir = os.path.dirname(file_name)
+                target = parent_dir + '/' + target
+
+            if os.path.exists(target) and os.access(target, os.W_OK):
+                writeable_files.add('{} -- symlink --> {}'
+                                    .format(file_name, target))
             else:
-                if os.access(file_name, os.W_OK):
-                    writeable_files.add(file_name)
+                parent_dir = os.path.dirname(target)
+                if os.access(parent_dir, os.W_OK):
+                    writeable_dirs.add((file_name, target))
 
-        # Handle any permissions issues with individual files.
-        except PermissionError:
-            tee("Could not open {} for analysis, permission denied."
-                .format(file_name), box='warn')
-        except FileNotFoundError:
-            tee("File not found. Broken link?:\n"
-                "  {} -->  {}".format(file_name, os.path.realpath(file_name)),
-                box='warn')
+        # OK, not a symlink. Just check permissions.
+        else:
+            if os.access(file_name, os.W_OK):
+                writeable_files.add(file_name)
 
     if writeable_files:
         # Print to console and log the interesting findings.
@@ -276,6 +317,75 @@ def check_permissions(**kwargs):
         tee("No writeable targets. This is expected...",
             box='ok')
 
+
+def check_command_permission(**kwargs):
+    """Checks permissions on commands returned from inside files
+
+    Loops through a provided list of dictionaries with a file name and
+    commands found within. Checks to see if they are writeable or missing and
+    living in a writable directory.
+
+    Expected kwargs: file_paths, regex, message_text, message_box
+    """
+    # Start an empty list for the return of the writable files/commands
+    return_list = []
+
+    for item in kwargs['commands']:
+        return_dict = {}
+        return_dict['text'] = []
+
+        # The commands we have are long and may include parameters or even
+        # multiple commands with pipes and ;. We try to split this all out
+        # below.
+        for command in item['text']:
+            command = re.sub(r'[\'"]', '', command)
+            command = re.split(r'[ ;\|]', command)
+
+            # We now have a list of some commands and some parameters and
+            # other garbage. Checking for os access will clean this up for us.
+            # The lines below determine if we have write access to anything.
+            # It also checks for the case where the target does not exist  but
+            # the parent directory is writeable.
+            for split_command in command:
+                vuln = False
+
+                # Some systemd items will specicify a command with a path
+                # relative to the calling item, particularly timer files.
+                relative_path = os.path.dirname(item['file_name'])
+
+                # First, check the obvious - is this a writable command?
+                if os.access(split_command, os.W_OK):
+                    vuln = True
+
+                # What about if we assume it is a relative path?
+                elif os.access(relative_path + '/' + split_command, os.W_OK):
+                    vuln = True
+
+                # Or maybe it doesn't exist at all, but is in a writeable
+                # director?
+                elif (os.access(os.path.dirname(split_command), os.W_OK)
+                      and not os.path.exists(split_command)):
+                    vuln = True
+
+                # If so, pack it all up in a new dictionary which is used
+                # below for output.
+                if vuln:
+                    return_dict['file_name'] = item['file_name']
+                    return_dict['text'].append(split_command)
+                    if return_dict not in return_list:
+                        return_list.append(return_dict)
+
+    if return_list and kwargs['message_text'] and kwargs['message_box']:
+        # Print to console and log the interesting file names and content.
+        tee("")
+        tee(kwargs['message_text'], box=kwargs['message_box'])
+        for item in return_list:
+            tee("  {}:".format(item['file_name']))
+            for text in item['text']:
+                tee("    {}".format(text))
+            tee("")
+
+
 ########################## Helper Functions Complete ##########################
 
 
@@ -290,9 +400,9 @@ def uptux_check_sysinfo():
     """Gather basic OS information"""
     # Gather a few basics for the report.
     uname = os.uname()
-    tee("Host: {}".format(uname.nodename))
-    tee("OS: {}, {}".format(uname.sysname, uname.version))
-    tee("Kernel: {}".format(uname.release))
+    tee("Host: {}".format(uname[1]))
+    tee("OS: {}, {}".format(uname[0], uname[3]))
+    tee("Kernel: {}".format(uname[2]))
     tee("Current user: {} (UID {} GID {})".format(os.getlogin(),
                                                   os.getuid(),
                                                   os.getgid()))
@@ -301,8 +411,17 @@ def uptux_check_sysinfo():
 
 def uptux_check_sudo():
     """Check for sudo rights"""
-    # Check if we can read the sudoers file
-    try:
+    file_name = '/etc/sudoers'
+
+    # Continue if we can't access the file.
+    if not os.path.exists(file_name):
+        tee("Cannot find {}...".format(file_name), box='warn')
+    elif not os.access(file_name, os.R_OK):
+        tee("Cannot read {}. This is expected...".format(file_name),
+            box='ok')
+
+    # But if we can, read it and process.
+    else:
         sudoers_file = open('/etc/sudoers', 'r')
         sudoers_content = sudoers_file.read()
         output = shell_exec('whoami')
@@ -312,11 +431,6 @@ def uptux_check_sudo():
         else:
             tee("Interesting, you can read /etc/sudoers. Check it out:\n{}"
                 .format(sudoers_content), box='sus')
-    except PermissionError:
-        tee("You can't open /etc/sudoers as yourself, this is expected...",
-            box='ok')
-    except FileNotFoundError:
-        tee("Can't find /etc/sudoers, moving on...", box='ok')
 
     tee("")
     tee("Checking for sudo, prompting for password now...", box='ok')
@@ -368,7 +482,7 @@ def uptux_check_systemd_paths():
         if os.access(item, os.W_OK):
             writeable_paths.append(item)
 
-    # Write the satus to the console and log.
+    # Write the status to the console and log.
     if writeable_paths:
         tee("The following systemd paths are writeable. See if you can combine"
             " this with a relative path Exec statement for privesc:",
@@ -403,22 +517,12 @@ def uptux_check_login_conf():
 def uptux_check_services():
     """Inspect systemd service unit files"""
     # Define known Linux folders for storing service unit definitions
-    service_units = set()
-    service_dirs = ['/etc/systemd/system/',
-                    '/lib/systemd/system/',
-                    '/run/systemd/system/']
-    service_pattern = '*.service'
+    units = set()
+    mask = '*.service'
+    units = find_system_files(known_dirs=SYSTEMD_DIRS,
+                              search_mask=mask)
 
-    # Recursively gather all service unit files from the known directories
-    # and add them to a deduplicated set.
-    for directory in service_dirs:
-        found_units = glob.glob(directory + service_pattern,
-                                recursive=True)
-        for unit in found_units:
-            # We don't care about units that point to /dev/null.
-            if '/dev/null' not in os.path.realpath(unit):
-                service_units.add(unit)
-    tee("Found {} service units to analyse...\n".format(len(service_units)),
+    tee("Found {} service units to analyse...\n".format(len(units)),
         box='ok')
 
     # Test for write access to any service files.
@@ -429,11 +533,10 @@ def uptux_check_services():
     tee("")
     tee("Checking permissions on service unit files...",
         box='ok')
-    check_permissions(file_paths=service_units,
-                      files_message_text=text,
-                      dirs_message_text=text2,
-                      message_box=box)
-
+    check_file_permissions(file_paths=units,
+                           files_message_text=text,
+                           dirs_message_text=text2,
+                           message_box=box)
 
     # Look for relative calls to binaries.
     # Example: ExecStart=somfolder/somebinary
@@ -447,12 +550,14 @@ def uptux_check_services():
                        r'[^/@\+!-]'   # not abs path or special exec
                        r'.*',         # rest of line
                        re.MULTILINE)
-    text = 'Possible relative path in Exec statement:'
+    text = ('Possible relative path in an Exec statement.\n'
+            'Unless you have writeable systemd paths, you won\'t be able to'
+            ' exploit this:')
     box = 'sus'
     tee("")
     tee("Checking for relative paths in service unit files [check 1]...",
         box='ok')
-    regex_vuln_search(file_paths=service_units,
+    regex_vuln_search(file_paths=units,
                       regex=regex,
                       message_text=text,
                       message_box=box)
@@ -473,18 +578,113 @@ def uptux_check_services():
                        r'[^/-]'       # not abs path or param
                        r'.*',         # rest of line
                        re.MULTILINE)
-    text = 'Possible relative path invoked with interpreter in Exec statement:'
+    text = ('Possible relative path invoked with an interpreter in an'
+            ' Exec statement.\n'
+            'Unless you have writable systemd paths, you won\'t be able to'
+            ' exploit this:')
     box = 'sus'
     tee("")
     tee("Checking for relative paths in service unit files [check 2]...",
         box='ok')
-    regex_vuln_search(file_paths=service_units,
+    regex_vuln_search(file_paths=units,
                       regex=regex,
                       message_text=text,
                       message_box=box)
 
-    ## Check for write access to any commands invoked by Exec statements.
-    regex = re.compile
+    # Check for write access to any commands invoked by Exec statements.
+    # Thhs regex below is used to extract command lines.
+    regex = re.compile(r'^Exec.*?=[!@+-]*(.*?$)',
+                       re.MULTILINE)
+    # We don't pass message info to this function as we need to perform more
+    # processing on the output to determine what is writeable.
+    tee("")
+    tee("Checking for write access to commands referenced in service files...",
+        box='ok')
+    service_commands = regex_vuln_search(file_paths=units,
+                                         regex=regex,
+                                         message_text='',
+                                         message_box='')
+
+    # Another helper function to take the extracted commands and check for
+    # write permissions.
+    text = 'You have write access to commands referred to in service files:'
+    box = 'vuln'
+    check_command_permission(commands=service_commands,
+                             message_text=text,
+                             message_box=box)
+
+
+def uptux_check_timer_units():
+    """Inspect systemd timer unit files"""
+    units = set()
+    mask = '*.timer'
+    units = find_system_files(known_dirs=SYSTEMD_DIRS,
+                              search_mask=mask)
+
+    tee("Found {} timer units to analyse...\n".format(len(units)),
+        box='ok')
+
+    # Test for write access to any timer files.
+    # Will resolve symlinks to their target and also check for broken links.
+    text = 'Found writeable timer unit files:'
+    text2 = 'Found writeable directories referred to by broken symlinks'
+    box = 'vuln'
+    tee("")
+    tee("Checking permissions on timer unit files...",
+        box='ok')
+    check_file_permissions(file_paths=units,
+                           files_message_text=text,
+                           dirs_message_text=text2,
+                           message_box=box)
+
+    # Timers may reference systemd services, which are already being checked.
+    # But they may reference a specific script (often a '.target' file of the
+    # same name. Check to see if the action called is writable.
+    # The regex below is used to extract these targets.
+    regex = re.compile(r'^Unit=*(.*?$)',
+                       re.MULTILINE)
+
+    # We don't pass message info to this function as we need to perform more
+    # processing on the output to determine what is writeable.
+    tee("")
+    tee("Checking for write access to commands referenced in timer files...",
+        box='ok')
+    timer_commands = regex_vuln_search(file_paths=units,
+                                       regex=regex,
+                                       message_text='',
+                                       message_box='')
+
+    # Another helper function to take the extracted commands and check for
+    # write permissions.
+    text = 'You have write access to commands referred to in timer files:'
+    box = 'vuln'
+    check_command_permission(commands=timer_commands,
+                             message_text=text,
+                             message_box=box)
+
+
+def uptux_check_socket_units():
+    """Inspect systemd socket unit files"""
+    units = set()
+    mask = '*.socket'
+    units = find_system_files(known_dirs=SYSTEMD_DIRS,
+                              search_mask=mask)
+
+    tee("Found {} socket units to analyse...\n".format(len(units)),
+        box='ok')
+
+    # Test for write access to any socket files.
+    # Will resolve symlinks to their target and also check for broken links.
+    text = 'Found writeable socket unit files:'
+    text2 = 'Found writeable directories referred to by broken symlinks'
+    box = 'vuln'
+    tee("")
+    tee("Checking permissions on socket unit files...",
+        box='ok')
+    check_file_permissions(file_paths=units,
+                           files_message_text=text,
+                           dirs_message_text=text2,
+                           message_box=box)
 
 ########################## Individual Checks Complete #########################
 
