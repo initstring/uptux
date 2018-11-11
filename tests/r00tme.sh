@@ -31,6 +31,20 @@ do rm -rf $FILE
 done
 echo ""
 
+                    ########## systemd PATH Tests ##########
+echo "[*] Adding some dodgy path settings..."
+# Set env variables for a new vulnerable path and the current systemd path
+VULNPATH=/tmp/uptux-vuln-path
+CURRENTPATH=`systemctl show-environment | grep PATH | sed -E 's/PATH=(.*?)$/\1/'`
+
+# Make the vulnerable dir and set it to world writeable
+mkdir $VULNPATH
+chmod 777 $VULNPATH
+
+# Set the path (unset with `systemctl import-environment PATH`)
+systemctl set-environment PATH=$VULNPATH:$CURRENTPATH
+
+
                     ########## Service Unit Tests ##########
 echo "[*] Setting up some shady service units..."
 

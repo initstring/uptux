@@ -25,6 +25,10 @@ for FILE in \
     /tmp/uptux-vuln*
 do rm -rf $FILE
 done
+
+echo "[*] Resetting systemd PATH"
+systemctl import-environment PATH
+
 echo ""
 
 echo "[+] All done, thanks!"

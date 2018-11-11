@@ -484,8 +484,9 @@ def uptux_check_systemd_paths():
 
     # Write the status to the console and log.
     if writeable_paths:
-        tee("The following systemd paths are writeable. See if you can combine"
-            " this with a relative path Exec statement for privesc:",
+        tee("The following systemd paths are writeable. THIS IS ODD!\n"
+            "See if you can combine this with a relative path Exec statement"
+            " for privesc:",
             box='vuln')
         for path in writeable_paths:
             tee("  {}".format(path))
