@@ -477,7 +477,7 @@ def uptux_check_systemd_paths():
     
     # This command may fail in some environments, only proceed if we have
     # a good match.
-    if output[0]:
+    if output:
         output = output[0].split(':')
 
         # Check each path - if it is writable, add it to a list.
