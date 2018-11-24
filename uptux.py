@@ -485,6 +485,8 @@ def uptux_check_systemd_paths():
         for item in output:
             if os.access(item, os.W_OK):
                 writeable_paths.append(item)
+    else:
+        writeable_paths = False
 
     # Write the status to the console and log.
     if writeable_paths:
