@@ -2,9 +2,24 @@
 Privilege escalation checks for Linux systemd.
 
 This tool checks for issues on Linux systems that may lead to
-privilege escalation. The core focus in on systemd configuration issues.
+privilege escalation. The core focus in on systemd configuration.
 
+This tool is under active development and is still at a very early stage. So
+far it does the following:
+- Basic sudo checks (nothing new and exciting here)
+- Checks for systemd paths that may be writeable (fat chance)
+- Checks for writable service, timer, and socket units (blah)
+- Disassembles these unit files and looks inside them for (EXCITING):
+    - References to executables that are writable
+    - References to broken symlinks pointing to writeable directories
+    - Relative path statements
 
+This disassembly and analysis of unit files is what makes this tool unique.
+For general purpose privesc, the classic tools are far superior.
+
+Future improvements may include things like:
+- Socket configuration issues
+- .conf file analysis
 
 # Usage
 All functionality is contained in a single file, because installing packages
