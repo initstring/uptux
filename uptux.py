@@ -474,13 +474,17 @@ def uptux_check_systemd_paths():
 
     # Take the output from bash and split it into a list of paths.
     output = re.findall(regex, output)
-    output = output[0].split(':')
+    
+    # This command may fail in some environments, only proceed if we have
+    # a good match.
+    if output[0]:
+        output = output[0].split(':')
 
-    # Check each path - if it is writable, add it to a list.
-    writeable_paths = []
-    for item in output:
-        if os.access(item, os.W_OK):
-            writeable_paths.append(item)
+        # Check each path - if it is writable, add it to a list.
+        writeable_paths = []
+        for item in output:
+            if os.access(item, os.W_OK):
+                writeable_paths.append(item)
 
     # Write the status to the console and log.
     if writeable_paths:
