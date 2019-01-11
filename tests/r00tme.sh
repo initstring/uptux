@@ -146,7 +146,7 @@ EOF
 touch /usr/bin/uptux-vuln-timer1
 chmod 766 /usr/bin/uptux-vuln-timer1
 
-# Service test case 5: service unit file with Exec statements pointing to
+# Service test case 5: timer unit file custom action pointing to
 # missing commands that exist in writable parent folders.
 UNIT=/lib/systemd/system/uptux-vuln-timer5.timer
 cat << EOF > $UNIT
@@ -187,6 +187,21 @@ cat << EOF > $UNIT
 There's nothing really here, just a writeable socket unit.
 EOF
 chmod 666 $UNIT
+
+# Socket test case 2: Socket unit file with Listen statements pointing
+# to writable socket files.
+UNIT=/lib/systemd/system/uptux-vuln-socket2.socket
+TARGET=/tmp/uptux-vuln-sock1
+
+cat << EOF > $UNIT
+[Unit]
+Description=Socket activation for vulnerable stuffs
+
+[Socket]
+ListenStream=$TARGET
+EOF
+touch $TARGET
+chmod 666 $TARGET
 
 
 

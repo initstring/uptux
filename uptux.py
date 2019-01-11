@@ -315,7 +315,7 @@ def check_file_permissions(**kwargs):
     if not writeable_files and not writeable_dirs:
         tee("")
         tee("No writeable targets. This is expected...",
-            box='ok')
+            box='note')
 
 
 def check_command_permission(**kwargs):
@@ -418,7 +418,7 @@ def uptux_check_sudo():
         tee("Cannot find {}...".format(file_name), box='warn')
     elif not os.access(file_name, os.R_OK):
         tee("Cannot read {}. This is expected...".format(file_name),
-            box='ok')
+            box='note')
 
     # But if we can, read it and process.
     else:
@@ -501,7 +501,7 @@ def uptux_check_systemd_paths():
             tee("  {}".format(path))
     else:
         tee("No systemd paths are writeable. This is expected...",
-            box='ok')
+            box='note')
 
 
 def uptux_check_system_conf():
@@ -716,10 +716,10 @@ def uptux_check_socket_units():
 
     # Another helper function to take the extracted commands and check for
     # write permissions.
-    text = ('You have write access to AF_UNIX socket files invoked by a\n'
-            'systemd service. This is interesting. Attach to the socket to\n'
-            'see if it is some sort of exploitable API / listening daemon /'
-            ' etc.')
+    text = ('You have write access to AF_UNIX socket files invoked by a'
+            ' systemd service.\n'
+            'This could be interesting. \n'
+            'You can attach to these files to look for an exploitable API.')
     box = 'sus'
     check_command_permission(commands=socket_files,
                              message_text=text,
