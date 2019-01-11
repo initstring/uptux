@@ -433,7 +433,9 @@ def uptux_check_sudo():
                 .format(sudoers_content), box='sus')
 
     tee("")
-    tee("Checking for sudo, prompting for password now...", box='ok')
+    tee("Checking for sudo, prompting for password now...\n"
+        "You may be prompted multiple times. Simply press enter if you don't"
+        " have it.", box='ok')
 
     # Check what commands the user is allowed to sudo.
     tee("")
@@ -441,7 +443,8 @@ def uptux_check_sudo():
     output = shell_exec(command)
     if 'Sorry' in output:
         tee("No sudo for you, moving on...", box='ok')
-    elif '(ALL : ALL) ALL' in output:
+        return
+    if '(ALL : ALL) ALL' in output:
         tee("God mode enabled, sudo your heart away:\n"
             "$ {}\n"
             "{}"
@@ -474,7 +477,7 @@ def uptux_check_systemd_paths():
 
     # Take the output from bash and split it into a list of paths.
     output = re.findall(regex, output)
-    
+
     # This command may fail in some environments, only proceed if we have
     # a good match.
     if output:
@@ -692,6 +695,35 @@ def uptux_check_socket_units():
                            files_message_text=text,
                            dirs_message_text=text2,
                            message_box=box)
+
+    # Check for write access to any socket files created by a service.
+    # This can be interesting - I've seen a systemd service run a REST
+    # API on a AF_UNIX socket. This would be missed by normal privesc
+    # checks.
+    # Thhs regex below is used to extract command lines.
+    regex = re.compile(r'^Listen.*?=[!@+-]*(.*?$)',
+                       re.MULTILINE)
+
+    # We don't pass message info to this function as we need to perform more
+    # processing on the output to determine what is writeable.
+    tee("")
+    tee("Checking for write access to AF_UNIX sockets...",
+        box='ok')
+    socket_files = regex_vuln_search(file_paths=units,
+                                     regex=regex,
+                                     message_text='',
+                                     message_box='')
+
+    # Another helper function to take the extracted commands and check for
+    # write permissions.
+    text = ('You have write access to AF_UNIX socket files invoked by a\n'
+            'systemd service. This is interesting. Attach to the socket to\n'
+            'see if it is some sort of exploitable API / listening daemon /'
+            ' etc.')
+    box = 'sus'
+    check_command_permission(commands=socket_files,
+                             message_text=text,
+                             message_box=box)
 
 ########################## Individual Checks Complete #########################
 
