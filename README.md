@@ -15,6 +15,7 @@ far it does the following:
     - References to executables that are writable
     - References to broken symlinks pointing to writeable directories
     - Relative path statements
+    - Unix socket files that are writeable (sneaky APIs)
 
 This disassembly and analysis of unit files is what makes this tool unique.
 For general purpose privesc, the classic tools are far superior.
