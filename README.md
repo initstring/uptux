@@ -32,7 +32,7 @@ There is nothing to install, just grab the script and run it.
 ```
 usage: uptux.py [-h] [-n] [-d]
 
-PrivEsc for modern Linux systemd, by initstring (gitlab.com/initstring)
+PrivEsc for modern Linux systemd, by initstring (github.com/initstring)
 
 optional arguments:
   -h, --help       show this help message and exit
