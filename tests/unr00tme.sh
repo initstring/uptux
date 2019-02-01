@@ -3,7 +3,7 @@
 ## This script tries to undo some intentional security flaws that were
 ## implemented for testing. Good luck.
 ##
-## https://gitlab.com/initstring/uptux
+## https://github.com/initstring/uptux
 
 if [ "$EUID" -ne 0 ]
   then echo "[!] Please run as root"
