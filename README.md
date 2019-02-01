@@ -4,8 +4,6 @@ Privilege escalation checks for Linux systemd.
 This tool checks for issues on Linux systems that may lead to
 privilege escalation. The core focus in on systemd configuration.
 
-uptux officially lives on [GitLab](https://gitlab.com/initstring/uptux) and is mirrored to GitHub. Please open issues on GitLab.
-
 This tool is under active development and is still at a very early stage. So
 far it does the following:
 - Basic sudo checks (nothing new and exciting here)
