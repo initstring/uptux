@@ -35,7 +35,7 @@ BANNER = r'''
                      
                    
                         PrivEsc for modern Linux systems
-                          gitlab.com/initstring/uptux
+                          github.com/initstring/uptux
 
 
 '''
