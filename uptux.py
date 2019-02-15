@@ -13,6 +13,7 @@ in restricted shells is a pain.
 
 import os
 import sys
+import getpass
 import argparse
 import datetime
 import subprocess
@@ -403,7 +404,7 @@ def uptux_check_sysinfo():
     tee("Host: {}".format(uname[1]))
     tee("OS: {}, {}".format(uname[0], uname[3]))
     tee("Kernel: {}".format(uname[2]))
-    tee("Current user: {} (UID {} GID {})".format(os.getlogin(),
+    tee("Current user: {} (UID {} GID {})".format(getpass.getuser(),
                                                   os.getuid(),
                                                   os.getgid()))
     tee("Member of following groups:\n  {}".format(shell_exec('groups')))
