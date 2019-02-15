@@ -173,7 +173,7 @@ def shell_exec(command):
         out_bytes = error.output
     except OSError as error:
         print('Could not run the following OS command. Is this box running'
-              ' systemd?'
+              ' systemd?\n'
               '   Command: {}'.format(command))
         print(error)
         sys.exit()
