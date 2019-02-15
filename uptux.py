@@ -171,6 +171,12 @@ def shell_exec(command):
                                             stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as error:
         out_bytes = error.output
+    except OSError as error:
+        print('Could not run the following OS command. Is this box running'
+              ' systemd?'
+              '   Command: {}'.format(command))
+        print(error)
+        sys.exit()
 
     # Return the lot as a text string for processing.
     out_text = out_bytes.decode('utf-8')
