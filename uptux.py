@@ -53,11 +53,16 @@ PARSER.add_argument('-d', '--debug', action='store_true',
                     help='print some debugging info to the console')
 ARGS = PARSER.parse_args()
 
-## One more global - known directories for storing systemd files.
+## Known directories for storing systemd files.
 SYSTEMD_DIRS = ['/etc/systemd/**/',
                 '/lib/systemd/**/',
                 '/run/systemd/**/',
                 '/usr/lib/systemd/**/']
+
+## Known directories for storing D-Bus configuration files
+DBUS_DIRS = ['/etc/dbus-1/system.d/',
+             '/etc/dbus-1/session.d']
+
 ########################## End of Global Declarations #########################
 
 
@@ -409,63 +414,6 @@ def uptux_check_sysinfo():
     tee("Member of following groups:\n  {}".format(shell_exec('groups')))
 
 
-def uptux_check_sudo():
-    """Check for sudo rights"""
-    file_name = '/etc/sudoers'
-
-    # Continue if we can't access the file.
-    if not os.path.exists(file_name):
-        tee("Cannot find {}...".format(file_name), box='warn')
-    elif not os.access(file_name, os.R_OK):
-        tee("Cannot read {}. This is expected...".format(file_name),
-            box='note')
-
-    # But if we can, read it and process.
-    else:
-        sudoers_file = open('/etc/sudoers', 'r')
-        sudoers_content = sudoers_file.read()
-        output = shell_exec('whoami')
-        if output in sudoers_content:
-            tee("Your username appears in /etc/sudoers, check it out:\n{}"
-                .format(sudoers_content), box='vuln')
-        else:
-            tee("Interesting, you can read /etc/sudoers. Check it out:\n{}"
-                .format(sudoers_content), box='sus')
-
-    tee("")
-    tee("Checking for sudo, prompting for password now...\n"
-        "You may be prompted multiple times. Simply press enter if you don't"
-        " have it.", box='ok')
-
-    # Check what commands the user is allowed to sudo.
-    tee("")
-    command = 'sudo -l'
-    output = shell_exec(command)
-    if 'Sorry' in output:
-        tee("No sudo for you, moving on...", box='ok')
-        return
-    if '(ALL : ALL) ALL' in output:
-        tee("God mode enabled, sudo your heart away:\n"
-            "$ {}\n"
-            "{}"
-            .format(command, output), box='vuln')
-    else:
-        tee("Interesting output:\n"
-            "$ {}\n"
-            "{}"
-            .format(command, output), box='sus')
-
-    # Go for gold, check if we are already root.
-    tee("")
-    command = 'sudo id'
-    output = shell_exec(command)
-    if 'uid=0(root)' in output:
-        tee("Congrats, you have root:\n"
-            "$ {}\n"
-            "{}"
-            .format(command, output), box='vuln')
-
-
 def uptux_check_systemd_paths():
     """Check if systemd PATH is writeable"""
     # Define the bash command.
@@ -503,7 +451,8 @@ def uptux_check_systemd_paths():
         tee("No systemd paths are writeable. This is expected...",
             box='note')
 
-
+'''
+# Functions below may be implemented in the future
 def uptux_check_system_conf():
     """Check /etc/system/system.conf settings"""
     return
@@ -522,7 +471,7 @@ def uptux_check_journal_conf():
 def uptux_check_login_conf():
     """Check /etc/system/login.conf settings"""
     return
-
+'''
 
 def uptux_check_services():
     """Inspect systemd service unit files"""
@@ -704,7 +653,7 @@ def uptux_check_socket_units():
     regex = re.compile(r'^Listen.*?=[!@+-]*(.*?$)',
                        re.MULTILINE)
 
-    # We don't pass message info to this function as we need to perform more
+   # We don't pass message info to this function as we need to perform more
     # processing on the output to determine what is writeable.
     tee("")
     tee("Checking for write access to AF_UNIX sockets...",
@@ -724,6 +673,48 @@ def uptux_check_socket_units():
     check_command_permission(commands=socket_files,
                              message_text=text,
                              message_box=box)
+
+
+def uptux_check_dbus_issues():
+    """Inspect D-Bus configuration items"""
+    units = set()
+    mask = '*.conf'
+    units = find_system_files(known_dirs=DBUS_DIRS,
+                              search_mask=mask)
+
+    tee("Found {} D-Bus conf files to analyse...\n".format(len(units)),
+        box='ok')
+
+    # Test for write access to any files.
+    # Will resolve symlinks to their target and also check for broken links.
+    text = 'Found writeable D-Bus conf files:'
+    text2 = 'Found writeable directories referred to by broken symlinks'
+    box = 'vuln'
+    tee("")
+    tee("Checking permissions on D-Bus conf files...",
+        box='ok')
+    check_file_permissions(file_paths=units,
+                           files_message_text=text,
+                           dirs_message_text=text2,
+                           message_box=box)
+
+    # Checking for overly permission policies in D-Bus configuration files.
+    # For example, normally "policy" is defined as a username. When defined in
+    # an XML tag on its own, it applies to everyone.
+    tee("")
+    tee("Checking for overly permissive D-Bus configuration rules...",
+        box='ok')
+
+    regex = re.compile(r'<policy>.*?</policy>',
+                       re.MULTILINE|re.DOTALL)
+
+    text = ('These D-Bus policies may be overly permissive as they do not'
+            ' specify a user or group.')
+    box = 'sus'
+    regex_vuln_search(file_paths=units,
+                      regex=regex,
+                      message_text=text,
+                      message_box=box)
 
 ########################## Individual Checks Complete #########################
 

@@ -204,6 +204,29 @@ touch $TARGET
 chmod 666 $TARGET
 
 
+                    ########## D-Bus Tests ##########
+echo "[*] Setting up some shady D-Bus configurations..."
+
+# D-Bus test case 1: writable conf file
+UNIT=/etc/dbus-1/system.d/uptux-vuln-dbus-service1.conf
+cat << EOF > $UNIT
+There's nothing really here, just a writeable file.
+EOF
+chmod 666 $UNIT
+
+# D-Bus test case 2: overly permissive policy
+UNIT=/etc/dbus-1/system.d/uptux-vuln-dbus-service1.conf
+
+cat << EOF > $UNIT
+<policy>
+  <allow own="vuln.dbus.bus"/>
+</policy>
+
+<random>
+  <stuff="hello"/>
+</random>
+EOF
+
 
 echo ""
 echo "[+] All done, thanks!"

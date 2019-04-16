@@ -18,11 +18,12 @@ if [ "$REPLY" != "YES" ]; then
 fi
 
 echo ""
-echo "[*] Deleting any leftover test vuln unit files..."
+echo "[*] Deleting any leftover test vuln files..."
 for FILE in \
     /lib/systemd/system/uptux-vuln* \
     /usr/bin/uptux-vuln* \
-    /tmp/uptux-vuln*
+    /tmp/uptux-vuln* \
+    /etc/dbus-1/system.d/uptux-vuln*
 do rm -rf $FILE
 done
 
