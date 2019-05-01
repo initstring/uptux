@@ -232,7 +232,7 @@ def regex_vuln_search(**kwargs):
         return_dict = {}
 
         # Continue if we can't access the file.
-        if not os.path.exists(file_name):
+        if not os.access(file_name, os.R_OK):
             continue
 
         file_object = open(file_name, 'r')
