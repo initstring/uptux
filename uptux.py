@@ -64,6 +64,9 @@ SYSTEMD_DIRS = ['/etc/systemd/**/',
 DBUS_DIRS = ['/etc/dbus-1/system.d/',
              '/etc/dbus-1/session.d']
 
+# Target files that we know we cannot exploit
+NOT_VULN = ['/dev/null',
+            '.']
 ########################## End of Global Declarations #########################
 
 
@@ -286,6 +289,10 @@ def check_file_permissions(**kwargs):
 
     for file_name in kwargs['file_paths']:
 
+        # Ignore known not-vulnerable targets
+        if file_name in NOT_VULN:
+            continue
+
         # Is it a symlink? If so, get the real path and check permissions.
         # If it is broken, check permissions on the parent directory.
         if os.path.islink(file_name):
@@ -360,6 +367,10 @@ def check_command_permission(**kwargs):
             # the parent directory is writeable.
             for split_command in command:
                 vuln = False
+
+                # Ignore known not-vulnerable targets
+                if split_command in NOT_VULN:
+                    continue
 
                 # Some systemd items will specicify a command with a path
                 # relative to the calling item, particularly timer files.
