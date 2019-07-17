@@ -13,6 +13,7 @@ in restricted shells is a pain.
 
 import os
 import sys
+import socket
 import getpass
 import argparse
 import datetime
@@ -67,6 +68,9 @@ DBUS_DIRS = ['/etc/dbus-1/system.d/',
 # Target files that we know we cannot exploit
 NOT_VULN = ['/dev/null',
             '.']
+
+# Used to enable/disable the relative path checks of systemd
+SYSTEMD_PATH_WRITABLE = False
 ########################## End of Global Declarations #########################
 
 
@@ -180,8 +184,7 @@ def shell_exec(command):
     except subprocess.CalledProcessError as error:
         out_bytes = error.output
     except OSError as error:
-        print('Could not run the following OS command. Is this box running'
-              ' systemd?\n'
+        print('Could not run the following OS command. Sorry!\n'
               '   Command: {}'.format(command))
         print(error)
         sys.exit()
@@ -465,31 +468,12 @@ def uptux_check_systemd_paths():
             box='vuln')
         for path in writeable_paths:
             tee("  {}".format(path))
+        global SYSTEMD_PATH_WRITABLE
+        SYSTEMD_PATH_WRITABLE = True
     else:
         tee("No systemd paths are writeable. This is expected...",
             box='note')
 
-'''
-# Functions below may be implemented in the future
-def uptux_check_system_conf():
-    """Check /etc/system/system.conf settings"""
-    return
-
-
-def uptux_check_user_conf():
-    """Check /etc/system/user.conf settings"""
-    return
-
-
-def uptux_check_journal_conf():
-    """Check /etc/system/journal.conf settings"""
-    return
-
-
-def uptux_check_login_conf():
-    """Check /etc/system/login.conf settings"""
-    return
-'''
 
 def uptux_check_services():
     """Inspect systemd service unit files"""
@@ -515,58 +499,60 @@ def uptux_check_services():
                            dirs_message_text=text2,
                            message_box=box)
 
-    # Look for relative calls to binaries.
-    # Example: ExecStart=somfolder/somebinary
-    regex = re.compile(r'^Exec(?:Start|Stop|Reload)='
-                       r'(?:@[^/]'    # special exec
-                       r'|-[^/]'      # special exec
-                       r'|\+[^/]'     # special exec
-                       r'|![^/]'      # special exec
-                       r'|!![^/]'     # special exec
-                       r'|)'          # or maybe no special exec
-                       r'[^/@\+!-]'   # not abs path or special exec
-                       r'.*',         # rest of line
-                       re.MULTILINE)
-    text = ('Possible relative path in an Exec statement.\n'
-            'Unless you have writeable systemd paths, you won\'t be able to'
-            ' exploit this:')
-    box = 'sus'
-    tee("")
-    tee("Checking for relative paths in service unit files [check 1]...",
-        box='ok')
-    regex_vuln_search(file_paths=units,
-                      regex=regex,
-                      message_text=text,
-                      message_box=box)
+    # Only check relative paths if we can abuse them
+    if SYSTEMD_PATH_WRITABLE:
+        # Look for relative calls to binaries.
+        # Example: ExecStart=somfolder/somebinary
+        regex = re.compile(r'^Exec(?:Start|Stop|Reload)='
+                           r'(?:@[^/]'    # special exec
+                           r'|-[^/]'      # special exec
+                           r'|\+[^/]'     # special exec
+                           r'|![^/]'      # special exec
+                           r'|!![^/]'     # special exec
+                           r'|)'          # or maybe no special exec
+                           r'[^/@\+!-]'   # not abs path or special exec
+                           r'.*',         # rest of line
+                           re.MULTILINE)
+        text = ('Possible relative path in an Exec statement.\n'
+                'Unless you have writeable systemd paths, you won\'t be able to'
+                ' exploit this:')
+        box = 'sus'
+        tee("")
+        tee("Checking for relative paths in service unit files [check 1]...",
+            box='ok')
+        regex_vuln_search(file_paths=units,
+                          regex=regex,
+                          message_text=text,
+                          message_box=box)
 
-    # Look for relative calls to binaries but invoked by an interpreter.
-    # Example: ExecStart=/bin/sh -c 'somefolder/somebinary'
-    regex = re.compile(r'^Exec(?:Start|Stop|Reload)='
-                       r'(?:@[^/]'    # special exec
-                       r'|-[^/]'      # special exec
-                       r'|\+[^/]'     # special exec
-                       r'|![^/]'      # special exec
-                       r'|!![^/]'     # special exec
-                       r'|)'          # or maybe no special exec
-                       r'.*?(?:/bin/sh|/bin/bash) '   # interpreter
-                       r'(?:[\'"]|)'  # might have quotes
-                       r'(?:-[a-z]+|)'# might have params
-                       r'(?:[ ]+|)'   # might have more spaces now
-                       r'[^/-]'       # not abs path or param
-                       r'.*',         # rest of line
-                       re.MULTILINE)
-    text = ('Possible relative path invoked with an interpreter in an'
-            ' Exec statement.\n'
-            'Unless you have writable systemd paths, you won\'t be able to'
-            ' exploit this:')
-    box = 'sus'
-    tee("")
-    tee("Checking for relative paths in service unit files [check 2]...",
-        box='ok')
-    regex_vuln_search(file_paths=units,
-                      regex=regex,
-                      message_text=text,
-                      message_box=box)
+        # Look for relative calls to binaries but invoked by an interpreter.
+        # Example: ExecStart=/bin/sh -c 'somefolder/somebinary'
+        regex = re.compile(r'^Exec(?:Start|Stop|Reload)='
+                           r'(?:@[^/]'    # special exec
+                           r'|-[^/]'      # special exec
+                           r'|\+[^/]'     # special exec
+                           r'|![^/]'      # special exec
+                           r'|!![^/]'     # special exec
+                           r'|)'          # or maybe no special exec
+                           r'.*?(?:/bin/sh|/bin/bash) '   # interpreter
+                           r'(?:[\'"]|)'  # might have quotes
+                           r'(?:-[a-z]+|)'# might have params
+                           r'(?:[ ]+|)'   # might have more spaces now
+                           r'[^/-]'       # not abs path or param
+                           r'.*',         # rest of line
+                           re.MULTILINE)
+        text = ('Possible relative path invoked with an interpreter in an'
+                ' Exec statement.\n'
+                'Unless you have writable systemd paths, you won\'t be able to'
+                ' exploit this:')
+        box = 'sus'
+        tee("")
+        tee("Checking for relative paths in service unit files [check 2]...",
+            box='ok')
+        regex_vuln_search(file_paths=units,
+                          regex=regex,
+                          message_text=text,
+                          message_box=box)
 
     # Check for write access to any commands invoked by Exec statements.
     # Thhs regex below is used to extract command lines.
@@ -691,6 +677,72 @@ def uptux_check_socket_units():
     check_command_permission(commands=socket_files,
                              message_text=text,
                              message_box=box)
+
+
+def uptux_check_socket_apis():
+    """Look for web servers on UNIX domain sockets"""
+    # Use Linux ss tool to find sockets in listening state
+    command = 'ss -xlp -H state listening'
+    output = shell_exec(command)
+
+    root_sockets = []
+    abstract_sockets = []
+    socket_replies = {}
+
+    # We should now have a multi-line, multi-column string with all the socket
+    # data. We need to split it up line by line and clean it
+    socket_data = output.split('\n')
+    sockets = [str(path.split()[2]) for path in socket_data]
+
+    for socket_path in sockets:
+        # For now, we are only interested in sockets owned by root
+        if os.path.exists(socket_path) and os.stat(socket_path).st_uid == 0:
+            root_sockets.append(socket_path)
+        # Abstract sockets are shown in bash prepended with '@'
+        # but it is actually a null byte. Saving these in a separate list
+        # to be processed in a future version (need to find a good way to
+        # locate the owner of abstract sockets)
+        elif socket_path[0] == '@':
+            abstract_sockets.append('\0' + socket_path[1:])
+
+    tee("Trying to connect to {} unix sockets owned by uid 0..."
+        .format(len(root_sockets)), box='ok')
+    tee("")
+
+    # Cycle through each and try to send a raw HTTP GET
+    for socket_target in root_sockets:
+
+        # Define a raw HTTP GET request
+        http_get = ('GET / HTTP/1.1\r\n'
+                    'Host: localhost\r\n'
+                    '\r\n\r\n')
+
+        # Try to interact with the socket like a web API
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client.settimeout(5)
+        try:
+            client.connect(socket_target)
+            client.sendall(http_get.encode())
+
+            reply = client.recv(8192).decode()
+
+            # If we get a reply to this, we assume it is an API
+            if reply:
+                socket_replies[socket_target] = reply
+
+        except (socket.error, UnicodeDecodeError):
+            continue
+
+    # If we have some replies, print to console
+    # Hack-ish string replacement to get a nice indent
+    if socket_replies:
+        tee("The following root-owned sockets replied as follows",
+            box='sus')
+        for socket_path in socket_replies:
+            tee("  " + socket_path + ":")
+            tee("    " + socket_replies[socket_path]
+                .replace('\n', '\n    '))
+            tee("")
 
 
 def uptux_check_dbus_issues():

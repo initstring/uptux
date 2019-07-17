@@ -1,5 +1,5 @@
 # uptux
-Privilege escalation checks for systemd, D-Bus, and (soon) more.
+Specialized privilege escalation checks for Linux systems.
 
 Implemented so far:
 - Writable systemd paths, services, timers, and socket units
@@ -10,6 +10,7 @@ Implemented so far:
     - Unix socket files that are writeable (sneaky APIs)
 - Writable D-Bus paths
 - Overly permissive D-Bus service settings
+- HTTP APIs running as root and responding on file-bound unix domain sockets
 
 These checks are based on things I encounter during my own research, and this
 tool is certainly not inclusive of everything you should be looking at. Don't
