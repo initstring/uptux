@@ -685,25 +685,20 @@ def uptux_check_socket_apis():
     command = 'ss -xlp -H state listening'
     output = shell_exec(command)
 
+    # We get Unicode back from the above command, let's fix
+    output = str(output)
+
     root_sockets = []
-    abstract_sockets = []
     socket_replies = {}
 
-    # We should now have a multi-line, multi-column string with all the socket
-    # data. We need to split it up line by line and clean it
-    socket_data = output.split('\n')
-    sockets = [str(path.split()[2]) for path in socket_data]
+    # We want to grab all the strings that look like socket paths
+    sockets = re.findall(r' (/.*?) ', output)
+    abstract_sockets = re.findall(r' (@.*?) ', output)
 
     for socket_path in sockets:
         # For now, we are only interested in sockets owned by root
         if os.path.exists(socket_path) and os.stat(socket_path).st_uid == 0:
             root_sockets.append(socket_path)
-        # Abstract sockets are shown in bash prepended with '@'
-        # but it is actually a null byte. Saving these in a separate list
-        # to be processed in a future version (need to find a good way to
-        # locate the owner of abstract sockets)
-        elif socket_path[0] == '@':
-            abstract_sockets.append('\0' + socket_path[1:])
 
     tee("Trying to connect to {} unix sockets owned by uid 0..."
         .format(len(root_sockets)), box='ok')
